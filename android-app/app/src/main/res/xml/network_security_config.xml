@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      Cleartext traffic is permitted for the following hosts to support
+      local development and testing:
+
+      - 10.0.2.2: Android emulator's alias for host machine localhost
+      - 10.0.2.2:8000: Default backend port on host
+      - localhost: For adb reverse tunneling (adb reverse tcp:8000 tcp:8000)
+
+      For production or real-device testing on a LAN IP (e.g., 192.168.x.x),
+      you MUST use HTTPS with a valid certificate. Cleartext HTTP is not
+      permitted for arbitrary IPs for security reasons.
+
+      To test on a real device over LAN:
+      1. Use adb reverse to forward device localhost to host:
+         adb reverse tcp:8000 tcp:8000
+         Then use http://10.0.2.2:8000 (works via the rule below).
+
+      2. Or configure the backend with HTTPS and a valid cert,
+         then add the domain to this config with cleartextTrafficPermitted="false".
+
+      Do NOT add broad cleartext domains (e.g., <domain includeSubdomains="true">192.168.0.0/16</domain>)
+      as this weakens network security.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+
+    <!-- Base config: secure by default (no cleartext) -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

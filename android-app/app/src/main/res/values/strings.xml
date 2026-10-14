@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ScamGuard</string>
+    <string name="status_monitoring">ScamGuard is monitoring</string>
+    <string name="alert_high_risk">High Risk of AI Scam</string>
+    <string name="login_title">Sign in to ScamGuard</string>
+    <string name="login_subtitle">Enter your credentials to start monitoring</string>
+    <string name="email_hint">Email</string>
+    <string name="password_hint">Password</string>
+    <string name="login_button">Login</string>
+    <string name="login_failed">Login failed: %s</string>
+    <string name="network_error">Network error: %s</string>
+    <string name="permission_rationale">ScamGuard needs microphone access to analyze live audio for deepfake detection.</string>
+    <string name="permission_button">Grant Permission</string>
+    <string name="monitoring_active">Monitoring Active</string>
+    <string name="monitoring_stopped">Monitoring Stopped</string>
+    <string name="monitoring_description_active">Streaming audio to server for analysis</string>
+    <string name="monitoring_description_stopped">Tap to start live microphone monitoring</string>
+    <string name="start_monitoring">Start Monitoring</string>
+    <string name="stop_monitoring">Stop Monitoring</string>
+    <string name="listening">Listening…</string>
+    <string name="threshold_label">Threshold: %.2f</string>
+</resources>

@@ -1,0 +1,216 @@
+// Jenkinsfile - ScamGuard CI/CD pipeline
+// Runs inside a Docker-in-Docker (dind) agent so every stage can pull images,
+// build the FastAPI backend, and assemble the Android APK in isolation.
+
+pipeline {
+    agent none
+
+    options {
+        timestamps()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        disableConcurrentBuilds()
+        timeout(time: 60, unit: 'MINUTES')
+    }
+
+    environment {
+        REGISTRY        = 'registry:5000'
+        IMAGE_BACKEND   = "${REGISTRY}/scamguard-backend"
+        IMAGE_TAG       = "${env.BUILD_NUMBER ?: 'dev'}-${env.GIT_COMMIT?.take(7) ?: 'local'}"
+        MINIO_ENDPOINT  = 'minio:9000'
+        MINIO_ACCESS    = credentials('minio-access-key')
+        MINIO_SECRET    = credentials('minio-secret-key')
+        MINIO_BUCKET    = 'ci-artifacts'
+        PATH = "/usr/local/bin:${env.PATH}"
+    }
+
+    stages {
+
+        // ----- Stage 1: Checkout -----
+        stage('Checkout') {
+            agent any
+            steps {
+                checkout scm
+                sh 'git rev-parse --short HEAD'
+            }
+        }
+
+        // ----- Stage 2: Lint Backend -----
+        stage('Lint Backend') {
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    reuseNode true
+                }
+            }
+            steps {
+                dir('backend') {
+                    sh 'pip install --no-cache-dir ruff==0.6.8'
+                    sh 'ruff check .'
+                    sh 'ruff format --check .'
+                }
+            }
+        }
+
+        // ----- Stage 3: Test Backend -----
+        stage('Test Backend') {
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    reuseNode true
+                }
+            }
+            steps {
+                dir('backend') {
+                    sh '''
+                        pip install --no-cache-dir poetry==1.8.2
+                        poetry config virtualenvs.create false
+                        poetry install --with dev --no-interaction --no-ansi
+                    '''
+                    sh 'pytest --junitxml=pytest-report.xml'
+                }
+            }
+            post {
+                always {
+                    junit 'backend/pytest-report.xml'
+                }
+            }
+        }
+
+        // ----- Stage 3.5: Alembic Migrate -----
+        stage('Alembic Migrate') {
+            agent {
+                docker {
+                    image 'python:3.11-slim'
+                    reuseNode true
+                }
+            }
+            steps {
+                dir('backend') {
+                    sh '''
+                        pip install --no-cache-dir poetry==1.8.2
+                        poetry config virtualenvs.create false
+                        poetry install --no-interaction --no-ansi
+                        poetry run alembic upgrade head
+                    '''
+                }
+            }
+        }
+
+        // ----- Stage 4: Build Backend Image (Docker-in-Docker) -----
+        stage('Build Backend Image') {
+            agent {
+                docker {
+                    image 'docker:24-cli'
+                    reuseNode true
+                    args '-v /var/run/docker.sock:/var/run/docker.sock --network host'
+                }
+            }
+            steps {
+                dir('backend') {
+                    sh "docker build -t ${IMAGE_BACKEND}:${IMAGE_TAG} ."
+                    sh "docker tag ${IMAGE_BACKEND}:${IMAGE_TAG} ${IMAGE_BACKEND}:latest"
+                }
+            }
+        }
+
+        // ----- Stage 5: Push Image to Local Registry -----
+        stage('Push Image') {
+            agent {
+                docker {
+                    image 'docker:24-cli'
+                    reuseNode true
+                    args '-v /var/run/docker.sock:/var/run/docker.sock --network host'
+                }
+            }
+            steps {
+                sh "docker push ${IMAGE_BACKEND}:${IMAGE_TAG}"
+                sh "docker push ${IMAGE_BACKEND}:latest"
+            }
+        }
+
+        // ----- Stage 6: Lint Android -----
+        stage('Lint Android') {
+            agent {
+                docker {
+                    image 'gradle:8.10-jdk17'
+                    reuseNode true
+                }
+            }
+            steps {
+                dir('android-app') {
+                    sh './gradlew ktlintCheck --no-daemon'
+                }
+            }
+        }
+
+        // ----- Stage 7: Test Android -----
+        stage('Test Android') {
+            agent {
+                docker {
+                    image 'gradle:8.10-jdk17'
+                    reuseNode true
+                }
+            }
+            steps {
+                dir('android-app') {
+                    sh './gradlew testDebugUnitTest --no-daemon'
+                }
+            }
+            post {
+                always {
+                    junit 'android-app/app/build/test-results/testDebugUnitTest/*.xml'
+                }
+            }
+        }
+
+        // ----- Stage 8: Build Android APK -----
+        stage('Build Android APK') {
+            agent {
+                docker {
+                    image 'gradle:8.10-jdk17'
+                    reuseNode true
+                }
+            }
+            steps {
+                dir('android-app') {
+                    sh './gradlew assembleDebug --no-daemon'
+                }
+            }
+        }
+
+        // ----- Stage 9: Upload APK to MinIO -----
+        stage('Upload APK to MinIO') {
+            agent any
+            steps {
+                sh '''
+                    apk=$(find android-app/app/build/outputs/apk/debug -name "*.apk" | head -n1)
+                    echo "Uploading APK: $apk"
+                    mc alias set local http://${MINIO_ENDPOINT} ${MINIO_ACCESS} ${MINIO_SECRET} || true
+                    mc mb -p local/${MINIO_BUCKET} || true
+                    mc cp "$apk" local/${MINIO_BUCKET}/scamguard-${IMAGE_TAG}.apk
+                '''
+            }
+        }
+
+        // ----- Stage 10: Cleanup -----
+        stage('Cleanup') {
+            agent any
+            steps {
+                sh 'docker image prune -f || true'
+                cleanWs()
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline ${env.BUILD_NUMBER} succeeded - image ${IMAGE_BACKEND}:${IMAGE_TAG}"
+        }
+        failure {
+            echo "Pipeline ${env.BUILD_NUMBER} failed - check stage logs."
+        }
+        always {
+            echo "Finished ScamGuard CI/CD pipeline run."
+        }
+    }
+}

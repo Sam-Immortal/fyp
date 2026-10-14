@@ -1,0 +1,10 @@
+{
+  "num_samples": 71933,
+  "mean_score": 0.8304444472980851,
+  "std_score": 0.3451623396940455,
+  "min_score": 9.704353765016549e-09,
+  "max_score": 1.0,
+  "eer_percent": 0.8156688920690384,
+  "num_bonafide": 7355,
+  "num_spoof": 63882
+}

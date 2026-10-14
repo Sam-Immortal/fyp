@@ -1,0 +1,85 @@
+name: scamguard-ci
+
+services:
+  jenkins:
+    build:
+      context: ./jenkins
+      dockerfile: Dockerfile
+    container_name: scamguard-jenkins
+    user: root
+    privileged: true
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    environment:
+      - DOCKER_HOST=tcp://docker:2376
+      - DOCKER_CERT_PATH=/certs/client
+      - DOCKER_TLS_VERIFY=1
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - jenkins_certs:/certs/client:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - registry
+      - minio
+      - postgres
+      - redis
+
+  docker:
+    image: docker:24-dind
+    container_name: scamguard-dind
+    privileged: true
+    restart: unless-stopped
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+    volumes:
+      - jenkins_certs:/certs/client
+      - dind_data:/var/lib/docker
+    ports:
+      - "2376:2376"
+
+  registry:
+    image: registry:2
+    container_name: scamguard-registry
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+
+  minio:
+    image: minio/minio:latest
+    container_name: scamguard-ci-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: scamguard
+      MINIO_ROOT_PASSWORD: scamguard-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: scamguard-ci-postgres
+    environment:
+      POSTGRES_USER: scamguard
+      POSTGRES_PASSWORD: scamguard
+      POSTGRES_DB: scamguard
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: scamguard-ci-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  jenkins_data:
+  jenkins_certs:
+  dind_data:
+  registry_data:
+  minio_data:

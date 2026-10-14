@@ -1,0 +1,37 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.keystore
+*.jks
+# datasets and caches
+data/
+backend/data/
+*.flac
+*.wav
+.cache/
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+# secrets
+.env
+.env.local
+# android and IDE
+.gradle/
+build/
+local.properties
+.idea/
+.qodo/
+# copies of the project
+*.zip

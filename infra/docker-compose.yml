@@ -1,0 +1,91 @@
+name: scamguard
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: scamguard-postgres
+    environment:
+      POSTGRES_USER: scamguard
+      POSTGRES_PASSWORD: scamguard
+      POSTGRES_DB: scamguard
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scamguard -d scamguard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: scamguard-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: scamguard-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: scamguard
+      MINIO_ROOT_PASSWORD: scamguard-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: scamguard-api
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+asyncpg://scamguard:scamguard@postgres:5432/scamguard
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: scamguard
+      MINIO_SECRET_KEY: scamguard-secret
+      JWT_SECRET: local-development-secret-please-change
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: scamguard-worker
+    command: ["taskiq", "worker", "app.workers:broker", "--tasks-pattern", "app.tasks.*"]
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+asyncpg://scamguard:scamguard@postgres:5432/scamguard
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  minio_data:
