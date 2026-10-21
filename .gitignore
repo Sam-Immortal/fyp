@@ -20,3 +20,8 @@ local.properties
 *.log
 *.jks
 *.keystore
+infra/.env
+backend/eval_results_*
+backend/rescore_test.csv
+backend/smoke_metrics*/
+backend/metrics_*/
