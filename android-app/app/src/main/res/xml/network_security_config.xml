@@ -5,17 +5,16 @@
       local development and testing:
 
       - 10.0.2.2: Android emulator's alias for host machine localhost
-      - 10.0.2.2:8000: Default backend port on host
-      - localhost: For adb reverse tunneling (adb reverse tcp:8000 tcp:8000)
+      - localhost: For adb reverse tunneling (adb reverse tcp:8000 tcp:8000 lets a USB phone use http://localhost:8000)
 
       For production or real-device testing on a LAN IP (e.g., 192.168.x.x),
       you MUST use HTTPS with a valid certificate. Cleartext HTTP is not
       permitted for arbitrary IPs for security reasons.
 
-      To test on a real device over LAN:
-      1. Use adb reverse to forward device localhost to host:
-         adb reverse tcp:8000 tcp:8000
-         Then use http://10.0.2.2:8000 (works via the rule below).
+      1. Emulator: the app uses http://10.0.2.2:8000 (the host machine).
+        USB phone: run `adb reverse tcp:8000 tcp:8000`, then build with
+        SCAMGUARD_API_BASE_URL=http://localhost:8000, which works through the
+        "localhost" rule below.
 
       2. Or configure the backend with HTTPS and a valid cert,
          then add the domain to this config with cleartextTrafficPermitted="false".

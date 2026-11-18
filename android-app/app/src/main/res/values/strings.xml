@@ -20,4 +20,20 @@
     <string name="stop_monitoring">Stop Monitoring</string>
     <string name="listening">Listening…</string>
     <string name="threshold_label">Threshold: %.2f</string>
+
+    <!-- SMS Scanning -->
+    <string name="sms_permission_rationale">ScamGuard needs SMS permission to scan incoming messages for scam and phishing attempts.</string>
+    <string name="sms_permission_button">Enable SMS Scanning</string>
+    <string name="sms_scans_title">Message Scans</string>
+    <string name="scan_status_analysing">Analysing…</string>
+    <string name="scan_status_high_risk">Scam Warning</string>
+    <string name="scan_status_low_risk">Looks Safe</string>
+    <string name="scan_status_failed">Analysis Failed</string>
+    <string name="scan_scam_probability">Scam Probability</string>
+    <string name="scan_risk_level">Risk Level</string>
+    <string name="scan_patterns">Detected Patterns</string>
+    <string name="scan_failed_message">Analysis failed - not checked</string>
+    <string name="scan_error_prefix">Error: </string>
+    <string name="scan_no_scans">No scans yet. Messages will appear here after being received.</string>
+    <string name="scan_pull_to_refresh">Pull to refresh</string>
 </resources>
