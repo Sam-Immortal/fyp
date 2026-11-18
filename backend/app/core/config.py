@@ -74,6 +74,10 @@ class Settings(BaseSettings):
 
     hf_token: str | None = Field(default=None, description="Hugging Face token for Inference API")
     hf_llm_model: str = Field(default="mistralai/Mistral-7B-Instruct-v0.3")
+    hf_inference_base_url: str = Field(
+        default="https://router.huggingface.co/v1",
+        description="Hugging Face Inference Providers base URL (OpenAI-compatible)",
+    )
     audio_model_name: str = Field(default="stapes-ai/aasist")
 
     # Audio processing settings
@@ -94,6 +98,12 @@ class Settings(BaseSettings):
     )
     audio_norm: str = Field(default="slaney", description="Mel filterbank normalization")
     audio_mel_scale: str = Field(default="htk", description="Mel scale type")
+
+    nlp_pending_timeout_minutes: int = Field(
+        default=10,
+        ge=1,
+        description="Minutes after which a pending NLP event is marked as failed",
+    )
 
 
 @lru_cache(maxsize=1)

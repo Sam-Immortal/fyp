@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from app.audio.embeddings import embed_window
 from app.audio.inference import AASIST_MAX_LEN, get_inference_service, pad_audio
 from app.core.config import get_settings
 
@@ -34,6 +35,9 @@ _settings = get_settings()
 THRESHOLD = float(_settings.safety_threshold)
 
 MODEL_PATH = Path("models") / "AASIST.pth"
+
+EMBEDDING_DIM = 160
+EMBEDDING_BYTES_PER_ROW = EMBEDDING_DIM * 4  # float32 = 4 bytes
 
 
 def sha256_file(path: Path) -> str | None:
@@ -210,6 +214,7 @@ def run_scorer(
     per_group: int | None,
     seed: int,
     flush_every: int,
+    save_embeddings: bool = False,
 ) -> dict:
     proto_map = parse_protocol(protocol_file)
     logger.info("Protocol entries: %d", len(proto_map))
@@ -242,15 +247,62 @@ def run_scorer(
         to_process = to_process[:limit]
     logger.info("Files to score: %d", len(to_process))
 
-    existing_ids = load_existing_utt_ids(output_csv)
-    write_header_if_needed(output_csv)
-
     inference_service = get_inference_service()
 
     base = output_csv
     unlabelled_csv = base.with_suffix(base.suffix + ".unlabelled.csv")
     failed_csv = base.with_suffix(base.suffix + ".failed.csv")
     provenance_csv = base.with_suffix(base.suffix + ".provenance.json")
+    emb_sidecar = base.with_suffix(base.suffix + ".emb.f32")
+
+    # Handle embeddings sidecar resume logic FIRST, before creating any files
+    if save_embeddings:
+        if emb_sidecar.exists():
+            # Sidecar exists: verify alignment with CSV data rows
+            try:
+                if output_csv.exists():
+                    with open(output_csv, "r", newline="", encoding="utf-8") as f:
+                        reader = csv.DictReader(f)
+                        csv_rows = sum(1 for _ in reader)
+                else:
+                    csv_rows = 0
+                expected_size = csv_rows * EMBEDDING_BYTES_PER_ROW
+                actual_size = emb_sidecar.stat().st_size
+                if actual_size != expected_size:
+                    logger.error(
+                        "Embeddings sidecar size mismatch: expected %d bytes (%d rows * 640), "
+                        "got %d bytes. Start a new output file.",
+                        expected_size, csv_rows, actual_size
+                    )
+                    sys.exit(1)
+                logger.info("Resuming with existing embeddings sidecar (%d rows aligned)", csv_rows)
+            except (OSError, csv.Error) as e:
+                logger.error("Failed to verify embeddings sidecar alignment: %s", e)
+                sys.exit(1)
+        elif output_csv.exists() and output_csv.stat().st_size > 0:
+            # CSV exists and has content (header + data rows) but no sidecar
+            # Check if it's just a header (no data rows)
+            try:
+                with open(output_csv, "r", newline="", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    csv_rows = sum(1 for _ in reader)
+                if csv_rows > 0:
+                    logger.error(
+                        "CSV has %d data rows but no embeddings sidecar. "
+                        "Cannot resume with --save-embeddings. Start a new output file.",
+                        csv_rows
+                    )
+                    sys.exit(1)
+            except (OSError, csv.Error):
+                # If we can't read it, assume it has data and error
+                logger.error(
+                    "CSV exists but cannot be read. Cannot resume with --save-embeddings. "
+                    "Start a new output file."
+                )
+                sys.exit(1)
+
+    existing_ids = load_existing_utt_ids(output_csv)
+    write_header_if_needed(output_csv)
 
     started = datetime.now(timezone.utc)
     start_ts = time.perf_counter()
@@ -261,6 +313,9 @@ def run_scorer(
     skipped = 0
     batch: list[dict] = []
     last_eta_log = 0
+    emb_file = None
+    if save_embeddings:
+        emb_file = open(emb_sidecar, "ab")
 
     def eta_log(force: bool = False) -> None:
         nonlocal last_eta_log
@@ -301,8 +356,13 @@ def run_scorer(
             mode = window_mode_for(num_samples)
 
             try:
-                result = inference_service.infer(audio, sr=16000)
-                score = float(result.anomaly_score)
+                if save_embeddings:
+                    score, embedding = embed_window(audio, sr=16000)
+                    # Write embedding to sidecar (raw float32, 160 values = 640 bytes)
+                    emb_file.write(embedding.tobytes())
+                else:
+                    result = inference_service.infer(audio, sr=16000)
+                    score = float(result.anomaly_score)
             except Exception as exc:  # noqa: BLE001 - record and continue
                 logger.warning("Failed to score %s: %s", file_path, exc)
                 failed_rows.append({"file_name": file_path.name, "error": f"score: {exc}"})
@@ -327,6 +387,8 @@ def run_scorer(
 
             if len(batch) >= flush_every:
                 append_rows(output_csv, batch)
+                if save_embeddings and emb_file:
+                    emb_file.flush()
                 batch.clear()
 
             eta_log()
@@ -336,6 +398,11 @@ def run_scorer(
 
     if batch:
         append_rows(output_csv, batch)
+
+    # Close embeddings sidecar
+    if emb_file:
+        emb_file.flush()
+        emb_file.close()
 
     # Unlabelled: record duration only, no scoring.
     for p in unlabelled:
@@ -368,6 +435,11 @@ def run_scorer(
     except OSError:
         total_rows = processed
 
+    # Compute embeddings sidecar SHA-256 if created
+    emb_sha256 = None
+    if save_embeddings and emb_sidecar.exists():
+        emb_sha256 = sha256_file(emb_sidecar)
+
     provenance = {
         "model_sha256": sha256_file(MODEL_PATH),
         "protocol_sha256": sha256_file(protocol_file),
@@ -394,6 +466,12 @@ def run_scorer(
             "bonafide": n_bonafide,
             "spoof": n_spoof,
             "failed": len(failed_rows),
+        },
+        "embeddings": {
+            "enabled": save_embeddings,
+            "dim": EMBEDDING_DIM,
+            "bytes_per_row": EMBEDDING_BYTES_PER_ROW,
+            "sidecar_sha256": emb_sha256,
         },
     }
     try:
@@ -433,6 +511,8 @@ def main() -> None:
                         help="Take up to N files per group (attack id / bonafide)")
     parser.add_argument("--seed", type=int, default=1234, help="Random seed for stratification")
     parser.add_argument("--flush-every", type=int, default=200, help="Flush CSV every N files")
+    parser.add_argument("--save-embeddings", action="store_true",
+                        help="Save 160-dim embeddings to sidecar .emb.f32 file")
     args = parser.parse_args()
 
     if not args.data_dir.exists():
@@ -450,6 +530,7 @@ def main() -> None:
         per_group=args.stratified_per_group,
         seed=args.seed,
         flush_every=args.flush_every,
+        save_embeddings=args.save_embeddings,
     )
 
 

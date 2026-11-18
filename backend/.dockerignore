@@ -1,21 +1,15 @@
-.venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-dist/
-build/
-*.egg-info/
-.env
-.env.local
-.git/
-.gitignore
-.idea/
-.vscode/
-tests/
-data/
+# Exclude everything first
+*
+
+# Re-include only what Dockerfile COPYs
+!app/
+!alembic/
+!alembic.ini
+!pyproject.toml
+!README.md
+!entrypoint.sh
+!models/AASIST.pth
+
+# But still exclude Python cache inside those directories
+**/__pycache__/
+**/*.pyc

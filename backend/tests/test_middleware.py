@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from unittest.mock import AsyncMock, patch
 
 from app.core.security import create_access_token, hash_password
 from app.db.models import User
@@ -59,7 +60,7 @@ async def test_sanitization_middleware_strips_nul_bytes(client: AsyncClient, aut
     raw_body = b'{"text": "test message\x00with nul", "sender": "+15551234567"}'
 
     # The NUL byte should be stripped before reaching the endpoint
-    with patch("app.api.nlp.queue_nlp_analysis", new_callable=AsyncMock) as mock_queue:
+    with patch("app.nlp.tasks.nlp_analysis_task.kiq", new_callable=AsyncMock) as mock_queue:
         resp = await client.post(
             "/api/v1/nlp/score",
             content=raw_body,
@@ -84,7 +85,7 @@ async def test_sanitization_middleware_no_change_without_nul(client: AsyncClient
     headers = {"Authorization": f"Bearer {auth_token}", "Content-Type": "application/json"}
     payload = {"text": "normal message without nul", "sender": "+15551234567"}
 
-    with patch("app.api.nlp.queue_nlp_analysis", new_callable=AsyncMock) as mock_queue:
+    with patch("app.nlp.tasks.nlp_analysis_task.kiq", new_callable=AsyncMock) as mock_queue:
         resp = await client.post(
             "/api/v1/nlp/score",
             json=payload,
@@ -100,7 +101,7 @@ async def test_sanitization_middleware_no_change_without_nul(client: AsyncClient
 async def test_sanitization_middleware_ignores_get_requests(client: AsyncClient, auth_token: str):
     """SanitizationMiddleware should not interfere with GET requests."""
     headers = {"Authorization": f"Bearer {auth_token}"}
-    with patch("app.api.nlp.queue_nlp_analysis", new_callable=AsyncMock):
+    with patch("app.nlp.tasks.nlp_analysis_task.kiq", new_callable=AsyncMock):
         resp = await client.get("/api/v1/nlp/events", headers=headers)
         # Should not crash
         assert resp.status_code == 200
@@ -112,7 +113,3 @@ async def test_sanitization_middleware_ignores_websocket_upgrade(client: AsyncCl
     # Just verify the middleware doesn't break WebSocket connections
     # This is a smoke test - we can't easily test WebSocket upgrade in test client
     pass
-
-
-# Need to import patch and AsyncMock
-from unittest.mock import AsyncMock, patch

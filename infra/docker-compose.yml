@@ -51,6 +51,7 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
+    image: scamguard-backend:dev
     container_name: scamguard-api
     environment:
       ENVIRONMENT: development
@@ -60,6 +61,10 @@ services:
       MINIO_ACCESS_KEY: scamguard
       MINIO_SECRET_KEY: scamguard-secret
       JWT_SECRET: local-development-secret-please-change
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_LLM_MODEL: ${HF_LLM_MODEL:-mistralai/Mistral-7B-Instruct-v0.3}
+      HF_INFERENCE_BASE_URL: ${HF_INFERENCE_BASE_URL:-https://router.huggingface.co/v1}
+      RUN_MIGRATIONS: "1"
     ports:
       - "8000:8000"
     depends_on:
@@ -71,20 +76,48 @@ services:
         condition: service_healthy
 
   worker:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
+    image: scamguard-backend:dev
+    pull_policy: never
     container_name: scamguard-worker
-    command: ["taskiq", "worker", "app.workers:broker", "--tasks-pattern", "app.tasks.*"]
+    command: ["taskiq", "worker", "app.workers.broker:broker", "app.nlp.tasks"]
     environment:
       ENVIRONMENT: development
       DATABASE_URL: postgresql+asyncpg://scamguard:scamguard@postgres:5432/scamguard
       REDIS_URL: redis://redis:6379/0
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_LLM_MODEL: ${HF_LLM_MODEL:-mistralai/Mistral-7B-Instruct-v0.3}
+      HF_INFERENCE_BASE_URL: ${HF_INFERENCE_BASE_URL:-https://router.huggingface.co/v1}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  scheduler:
+    image: scamguard-backend:dev
+    pull_policy: never
+    container_name: scamguard-scheduler
+    command: ["taskiq", "scheduler", "app.workers.broker:scheduler", "app.nlp.tasks"]
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+asyncpg://scamguard:scamguard@postgres:5432/scamguard
+      REDIS_URL: redis://redis:6379/0
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_LLM_MODEL: ${HF_LLM_MODEL:-mistralai/Mistral-7B-Instruct-v0.3}
+      HF_INFERENCE_BASE_URL: ${HF_INFERENCE_BASE_URL:-https://router.huggingface.co/v1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      disable: true
 
 volumes:
   postgres_data:
