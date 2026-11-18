@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -28,8 +31,10 @@ class ScamPattern(BaseModel):
 
 
 class NlpScoreResponse(BaseModel):
+    event_id: int
+    status: Literal["pending", "completed", "failed"]
     scam_probability: float = Field(ge=0.0, le=1.0)
-    risk_level: str = Field(pattern="^(low|medium|high|critical)$")
+    risk_level: Literal["pending", "low", "medium", "high", "critical"]
     patterns: ScamPattern
     explanation: str
     model: str
@@ -37,11 +42,16 @@ class NlpScoreResponse(BaseModel):
 
 class NlpScoreEventResponse(BaseModel):
     id: int
+    status: Literal["pending", "completed", "failed"]
     sender: str
     message_preview: str
     score: float
     threshold: float
     is_high_risk: bool
-    created_at: str
+    risk_level: Literal["pending", "low", "medium", "high", "critical"] | None = None
+    patterns: ScamPattern | None = None
+    explanation: str | None = None
+    error: str | None = None
+    created_at: datetime
 
     model_config = {"from_attributes": True}

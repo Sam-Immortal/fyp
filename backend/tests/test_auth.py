@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import jwt
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from datetime import UTC, datetime, timedelta
 
-from app.core.security import hash_password
+from app.core.security import create_access_token, create_refresh_token, decode_token, hash_password
 from app.db.models import User
 from app.db.session import get_db
 from app.main import create_app
@@ -162,3 +164,83 @@ async def test_logout_revokes_refresh(client: AsyncClient, test_user: User):
 async def test_protected_route_without_auth(client: AsyncClient):
     resp = await client.get("/auth/me")
     assert resp.status_code == 401
+    assert resp.headers.get("www-authenticate") == "Bearer"
+
+
+async def test_malformed_token_string(client: AsyncClient):
+    """Malformed token string returns 401 with WWW-Authenticate header."""
+    resp = await client.get("/auth/me", headers={"Authorization": "Bearer not.a.valid.token"})
+    assert resp.status_code == 401
+    assert resp.headers.get("www-authenticate") == "Bearer"
+
+
+async def test_expired_token(client: AsyncClient, test_user: User):
+    """Expired token returns 401 with WWW-Authenticate header."""
+    # Create an expired token (exp 1 hour ago) manually
+    from app.core.config import get_settings
+    settings = get_settings()
+    payload = {
+        "sub": str(test_user.id),
+        "email": test_user.email,
+        "type": "access",
+        "iat": int((datetime.now(UTC) - timedelta(hours=2)).timestamp()),
+        "exp": int((datetime.now(UTC) - timedelta(hours=1)).timestamp()),
+    }
+    expired_token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    resp = await client.get("/auth/me", headers={"Authorization": f"Bearer {expired_token}"})
+    assert resp.status_code == 401
+    assert resp.headers.get("www-authenticate") == "Bearer"
+
+
+async def test_refresh_token_used_as_access_token(client: AsyncClient, test_user: User):
+    """Raw refresh token (non-JWT) used as access token returns 401 with WWW-Authenticate header."""
+    login = await client.post(
+        "/auth/login",
+        json={"email": "test@example.com", "password": "Str0ngP@ss"},
+    )
+    refresh_token = login.json()["refresh_token"]
+    resp = await client.get("/auth/me", headers={"Authorization": f"Bearer {refresh_token}"})
+    assert resp.status_code == 401
+    assert resp.headers.get("www-authenticate") == "Bearer"
+
+
+async def test_refresh_token_jwt_used_as_access_token(client: AsyncClient, test_user: User):
+    """Properly signed JWT with type=refresh used as access token returns 401 'Not an access token'."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    payload = {
+        "sub": str(test_user.id),
+        "email": test_user.email,
+        "type": "refresh",
+        "iat": int(datetime.now(UTC).timestamp()),
+        "exp": int((datetime.now(UTC) + timedelta(hours=1)).timestamp()),
+    }
+    refresh_jwt = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    resp = await client.get("/auth/me", headers={"Authorization": f"Bearer {refresh_jwt}"})
+    assert resp.status_code == 401
+    assert resp.headers.get("www-authenticate") == "Bearer"
+    assert resp.json()["detail"] == "Not an access token"
+
+
+async def test_missing_sub_claim(client: AsyncClient):
+    """Token with missing 'sub' claim returns 401 with WWW-Authenticate header."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    # Create a token without 'sub' claim
+    payload = {"type": "access", "email": "test@example.com", "exp": int((datetime.now(UTC) + timedelta(hours=1)).timestamp())}
+    token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    resp = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+    assert resp.headers.get("www-authenticate") == "Bearer"
+
+
+async def test_non_numeric_sub_claim(client: AsyncClient):
+    """Token with non-numeric 'sub' claim returns 401 with WWW-Authenticate header."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    # Create a token with non-numeric 'sub'
+    payload = {"type": "access", "sub": "not-a-number", "exp": int((datetime.now(UTC) + timedelta(hours=1)).timestamp())}
+    token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    resp = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+    assert resp.headers.get("www-authenticate") == "Bearer"

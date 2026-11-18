@@ -5,6 +5,9 @@ from __future__ import annotations
 from app.nlp.worker import run_nlp_analysis
 from app.workers.broker import broker
 
+# Import to register the periodic task
+from app.nlp import pending_timeout  # noqa: F401
+
 
 @broker.task(task_name="nlp.analysis")
 async def nlp_analysis_task(event_id: int, text: str, sender: str | None) -> None:

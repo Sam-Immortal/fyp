@@ -34,6 +34,8 @@ cd infra
 docker compose up -d --build
 ```
 
+> **Note:** The first start **must** use `--build` because `worker` and `scheduler` share the `scamguard-backend:dev` image built by the `api` service. Without `--build`, the shared image won't exist and the dependent services will fail to start.
+
 API: <http://localhost:8000/docs> &nbsp;&nbsp; MinIO: <http://localhost:9001>
 
 ## Configure Jenkins

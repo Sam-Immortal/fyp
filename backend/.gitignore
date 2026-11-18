@@ -1,0 +1,62 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / Packaging
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data files (large, generated)
+*.emb.f32
+eval_*.csv
+eval_*.csv.failed.csv
+eval_*.csv.unlabelled.csv
+eval_*.csv.provenance.json
+dev_*.csv
+*_subset.csv
+
+# Model checkpoints
+*.joblib
+*.pth
+
+# Type probe outputs
+type_probe_*/
+metrics_*/
+metrics_compare/
+
+# Logs
+*.log
+
+# Ignore data/ and reports/, except the SMS evaluation set and its results
+data/
+!/data/
+/data/*
+!/data/sms_eval/
+
+reports/
+!/reports/
+/reports/*
+!/reports/sms_eval/

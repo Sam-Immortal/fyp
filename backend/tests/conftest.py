@@ -6,8 +6,9 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.security import hash_password
+from app.core.security import create_access_token, hash_password
 from app.db.models import User
+from app.db.session import get_db
 from app.main import create_app
 
 # Override to use SQLite for tests
@@ -37,9 +38,11 @@ async def test_db_session() -> AsyncSession:
 @pytest_asyncio.fixture
 async def client():
     app = create_app()
+    app.dependency_overrides[get_db] = lambda: test_session_factory()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         yield ac
+    app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture
@@ -53,3 +56,8 @@ async def test_user(test_db_session: AsyncSession):
     await test_db_session.commit()
     await test_db_session.refresh(user)
     yield user
+
+
+@pytest_asyncio.fixture
+async def auth_token(test_user: User):
+    return create_access_token(test_user.id, test_user.email)
