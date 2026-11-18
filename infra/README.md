@@ -2,9 +2,11 @@
 
 Container orchestration, Jenkins CI/CD, and shared deployment artifacts.
 
+MinIO runs only in the CI stack (docker-compose.jenkins.yml), where Jenkins stores built APKs.
+
 ## Folders
 
-- `docker-compose.yml` - Local dev stack: API, worker, Postgres, Redis, MinIO.
+- `docker-compose.yml` - Local dev stack: API, worker, scheduler, Postgres, Redis.
 - `docker-compose.jenkins.yml` - CI stack: Jenkins + Docker-in-Docker + local registry + MinIO.
 - `jenkins/Dockerfile` - Custom Jenkins image with Docker CLI + Poetry pre-installed.
 - `jenkins/plugins.txt` - Plugins installed at image build time.
@@ -36,7 +38,7 @@ docker compose up -d --build
 
 > **Note:** The first start **must** use `--build` because `worker` and `scheduler` share the `scamguard-backend:dev` image built by the `api` service. Without `--build`, the shared image won't exist and the dependent services will fail to start.
 
-API: <http://localhost:8000/docs> &nbsp;&nbsp; MinIO: <http://localhost:9001>
+API: <http://localhost:8000/docs>
 
 ## Configure Jenkins
 
